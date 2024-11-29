@@ -1,0 +1,203 @@
+import numpy as np
+import camelot
+import PyPDF2
+import pandas as pd
+import re
+import math
+import tkinter as tk
+from tkinter import filedialog
+from datetime import datetime, timedelta
+import pickle
+import Levenshtein as lev
+import nltk
+nltk.download('punkt_tab')
+from nltk.tokenize import word_tokenize
+
+
+def upload_file():
+    # Create a hidden root window
+    root = tk.Tk()
+    root.withdraw()  # Hide the root window
+    
+    # Open the file dialog
+    file_path = filedialog.askopenfilename(
+        title="Select a file to upload",
+        filetypes=[("All Files", "*.*"), ("Text Files", "*.txt"), ("CSV Files", "*.csv")]
+    )
+    
+    if file_path:
+        print(f"Selected file: {file_path}")
+        return str(file_path)
+    else:
+        print("No file selected.")
+
+
+    
+#file_path = upload_file()
+def dataframe_prepare():
+    file_path = upload_file()
+    pdf_path = file_path
+    tables = camelot.read_pdf(pdf_path,flavor='stream',pages="all")
+    table1 =tables[0].df
+    table2=tables[1].df
+    data=[]
+    for table in tables:
+        data.append(table.df)
+    df=pd.concat([data[0],data[1],data[2],data[3]]).fillna(0)
+    df1=df.drop(df.index[0])
+    df1.columns= df1.iloc[0]
+    df1=df1.drop(df.index[1])
+    df1=df1.fillna(0)
+    df1=df1.astype(str)
+
+    return df1
+
+
+def dataframe_arrange():  
+    
+    dataframe = dataframe_prepare()
+
+    def move_data(row):
+        if '+' not in row['Paid in']:
+            row['Balance'] = row['Paid in']
+            row['Paid in'] =''
+        return row
+    
+    dataframe=dataframe.apply(move_data,axis=1)
+    dataframe.reset_index(drop=True, inplace=True)
+
+    def convert_to_date(text):
+        try:
+            return pd.to_datetime(text)
+        except ValueError:
+            return None
+
+# Apply the function to create a new column with datetime objects
+    dataframe['Date'] = dataframe['Description'].apply(convert_to_date)
+    dataframe['Date'] = dataframe['Date'].fillna(method='ffill')
+    dataframe.replace({' ': np.nan, '': np.nan}, inplace=True)
+    dataframe.dropna(subset=['Paid out', 'Paid in', 'Balance'], how='all', inplace=True)
+    dataframe=dataframe[['Date', 'Description','Paid out', 'Paid in', "Balance"]]
+    data2=dataframe
+#Adding a new data point for testing
+    new_row = {'Date': pd.to_datetime('2024-01-29'), 'Description':'circleKOilTop', 'Paid out':45.65, 'Paid in': np.nan, 'Balance':np.nan}
+    data2.loc[116] = [pd.to_datetime('2024-01-29'),'VDC-CirkleK-Oil Top','-45.65', np.nan, np.nan]
+########################################
+    data2=data2.dropna(subset=['Paid out'])
+    data2['Paid out'] = pd.to_numeric(data2['Paid out'].str.replace('-', '').str.strip(), errors='coerce')
+    data2['Paid out']=pd.to_numeric(data2['Paid out'])
+    data2['Paid out']=data2['Paid out'].abs()
+
+    return data2
+
+
+# Cleaning Data for ML model
+def data_cleaning():
+    data2 = dataframe_arrange()
+    
+    data2['Description'] = data2['Description'].str.replace('VDC-', '').str.replace('VDP-', '')
+
+    def text_cleaning(text):
+        # Convert words to lower case.
+        text = text.lower()
+        #Remove vdc and vdp
+        #text=re.sub(pattern,"",text)
+
+        # Remove special characters and numbers. This also removes the dates
+        # which are not important in classifying expenses
+        text = re.sub(r'[^\w\s]|https?://\S+|www\.\S+|https?:/\S+|[^\x00-\x7F]+|\d','', str(text).strip())
+
+        # Tokenise
+        text_list = word_tokenize(text)
+        result = ''.join(text_list)
+        return result
+    
+    data2['Description'] = data2['Description'].apply(lambda x: text_cleaning(x))
+    return data2
+
+
+#Creating attributes, preparing data to feed into the model.
+
+def data_refining():
+    data3 = data_cleaning()
+
+    def separate_float(number):
+        integer_part = math.floor(number)
+        fractional_part = number - integer_part
+        return integer_part, fractional_part
+    
+    # Counting the number of decimal places of a number
+    def count_decimal_places(number):
+        num_to_string = { 0: 'zero', 1: 'one', 2: 'two', 3: 'three', 4: 'four'}
+        return num_to_string[len(str(int(number)))]
+    
+    def is_there_fraction(number):
+        if number==0.00:
+            return "no"
+        else:
+            return "yes"
+        
+    data3[['integer_part', 'fractional_part']] = data3['Paid out'].apply(separate_float).apply(pd.Series)
+    data3['Decimal Places']=data3['integer_part'].apply(count_decimal_places).apply(pd.Series)
+    data3=data3.reset_index()
+    data3["Is there fraction"] = data3['fractional_part'].apply(is_there_fraction).apply(pd.Series)
+
+    return data3
+
+#Preparing data for feed into model.
+def input_for_model():
+    data4 = data_refining()
+    
+    with open('pkl files/category_dict.pkl','rb') as file:
+        category_dict = pickle.load(file)
+    
+    def get_category(description):
+        closest_match = None
+        min_distance = float('inf')
+        for category, items in category_dict.items():
+            if description in items:
+                return category
+#Implementation of Lenshtein distance
+        for key, values in category_dict.items():
+            for value in values:
+                distance = lev.distance(description, value)
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_match = (key, value)
+        return key
+
+
+    data4['Category'] = data4['Description'].apply(get_category)
+    df= data4[['Category','integer_part','Decimal Places','Is there fraction']]
+    df = pd.get_dummies(df, columns=['Category', 'Decimal Places', 'Is there fraction'], drop_first=True)
+
+    return df, data4
+
+
+# Taking Predictions with ML model
+def predictions():
+
+    df,data4 = input_for_model()
+    # Load the model from the file
+    with open('pkl files/random_forest_model.pkl', 'rb') as file:
+        loaded_rf = pickle.load(file)
+
+    targets = loaded_rf.predict(df)
+
+    with open('pkl files/label_dict.pkl','rb') as file:
+        label_dict = pickle.load(file)
+
+    expense_category = pd.DataFrame({'Expense Category': targets})
+
+    data4['Expense_Category'] = expense_category['Expense Category'].map(label_dict)
+    data_for_analytics = data4[['Date','Paid out', 'Expense_Category']]
+    data_for_analytics['year'] = data_for_analytics['Date'].dt.year
+    data_for_analytics['month'] = data_for_analytics['Date'].dt.month
+    data_for_analytics['day'] = data_for_analytics['Date'].dt.day
+
+    return data_for_analytics
+
+
+r = predictions()
+
+print(r) 
