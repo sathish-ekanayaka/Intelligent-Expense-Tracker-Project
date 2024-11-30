@@ -1,5 +1,5 @@
-from src.required_classes import model_operations
+from src.required_classes import modelOperations
 
-a =model_operations()
+a =modelOperations()
 print(a.model_inference())
 

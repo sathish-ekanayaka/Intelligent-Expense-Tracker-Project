@@ -19,7 +19,7 @@ from sklearn.preprocessing import LabelEncoder
 
 
 ###################################################################################
-class file_uploads:
+class fileUploads:
     
     
     def __init__(self):
@@ -28,26 +28,33 @@ class file_uploads:
 
     def upload_file(self):
     # Create a hidden root window
-        root = tk.Tk()
-        root.withdraw()  # Hide the root window
-    
-    # Open the file dialog
-        file_path = filedialog.askopenfilename(
-            title="Select a file to upload",
-            filetypes=[("All Files", "*.*"), ("Text Files", "*.txt"), ("CSV Files", "*.csv")]
-        )
-    
-        if  file_path:
-            print(f"Selected file: {file_path}")
-            return str(file_path)
-        else:
-            print("No file selected.")
+        try:
+            root = tk.Tk()
+            root.withdraw()  # Hide the root window
+        
+        # Open the file dialog
+            file_path = filedialog.askopenfilename(
+                title="Select a file to upload",
+                filetypes=[("All Files", "*.*"), ("Text Files", "*.txt"), ("CSV Files", "*.csv")]
+            )
+        
+            if  file_path:
+                print(f"Selected file: {file_path}")
+                return str(file_path)
+            else:
+                print("No file selected.")
+                return None
+        
+        except Exception as e:
+            print("An Error Occured while uploading the file : {e}")
+            return None
 
 ##################################################################################
-class data_preprocessing:
+class dataPreprocessing:
+    
     def __init__(self):
         self.name = "Data preprocessing for model and inference"
-    
+ #Dataframe aquired from the PDF for training file preparation or inference is formatted into the desired format    
     def data_frame_arranging(self, df):
 
         def move_data(row):
@@ -82,7 +89,7 @@ class data_preprocessing:
 
         return data2
 
-    # Cleaning Data for ML model 
+    # Cleaning Data for ML model (Training or Inference)
     def data_cleaning(self, df):
         
         df['Description'] = df['Description'].str.replace('VDC-', '').str.replace('VDP-', '')
@@ -90,10 +97,7 @@ class data_preprocessing:
         def text_cleaning(text):
             # Convert words to lower case.
             text = text.lower()
-            #Remove vdc and vdp
-            #text=re.sub(pattern,"",text)
-
-            # Remove special characters and numbers. This also removes the dates
+            # Remove special characters and numbers
             # which are not important in classifying expenses
             text = re.sub(r'[^\w\s]|https?://\S+|www\.\S+|https?:/\S+|[^\x00-\x7F]+|\d','', str(text).strip())
 
@@ -131,28 +135,38 @@ class data_preprocessing:
 
         return df
 
-#######################################################################################################################
-class file_operations(file_uploads,data_preprocessing):
+class fileOperations(fileUploads,dataPreprocessing):
     def __init__(self):
         super().__init__()
         self.name ="Data Preprocessing for training and inference"
     
     def pdf_file(self):
-        pdf_path = self.upload_file()
-        tables = camelot.read_pdf(pdf_path,flavor='stream',pages="all")
-        table1 =tables[0].df
-        table2=tables[1].df
-        data=[]
-        for table in tables:
-            data.append(table.df)
-        df=pd.concat([data[0],data[1],data[2],data[3]]).fillna(0)
-        df1=df.drop(df.index[0])
-        df1.columns= df1.iloc[0]
-        df1=df1.drop(df.index[1])
-        df1=df1.fillna(0)
-        df1=df1.astype(str)
-        df1=self.data_frame_arranging(df1)
-        return df1
+        
+        try:
+            pdf_path = self.upload_file()
+            tables = camelot.read_pdf(pdf_path,flavor='stream',pages="all")
+            table1 =tables[0].df
+            table2=tables[1].df
+            data=[]
+            for table in tables:
+                data.append(table.df)
+            df=pd.concat([data[0],data[1],data[2],data[3]]).fillna(0)
+            df1=df.drop(df.index[0])
+            df1.columns= df1.iloc[0]
+            df1=df1.drop(df.index[1])
+            df1=df1.fillna(0)
+            df1=df1.astype(str)
+            df1=self.data_frame_arranging(df1)
+            return df1
+        
+        except FileNotFoundError as e:
+            print(f"File Eroor : {e}")
+        except ValueError as e:
+            print(f"Value Error : {e}")
+        except Exception as e:
+            print("Unexpected Error occured while parsing the PDF : {e}")
+            return None
+    
 
     
     def csv_save_from_pdf(self):
@@ -164,7 +178,7 @@ class file_operations(file_uploads,data_preprocessing):
     
     
 ############################################################################################################################
-class model_operations(file_operations):
+class modelOperations(fileOperations):
     
     def __init__(self):
         super().__init__()
@@ -172,14 +186,39 @@ class model_operations(file_operations):
 
     def model_training_initialization(self):
         csv_path = self.upload_file()
-        train_data = pd.read_csv(csv_path)
+        try:
+            train_data = pd.read_csv(csv_path)
+        except FileNotFoundError:
+            print("The training data file was not found. Please select a valid file.")
+            return None
+        except pd.errors.EmptyDataError:
+            print("The selected file is empty. Please select a valid file.")
+            return None
+        except Exception as e:
+            print(f"An unexpected error occurred while reading the CSV file: {e}")
+            return None
+
         train_data=self.data_cleaning(train_data)
         train_data = self.data_refining(train_data)
         #Peparing the dictionary of transaction categories and descriptions
         transaction_chanels = train_data.groupby('Transaction_Chanel')['Description'].apply(lambda x: list(set(x))).to_dict()
-        with open('pkl files/transaction_chanels_dict.pkl', 'wb') as file:
-            pickle.dump(transaction_chanels, file)
+        try:
+            with open('pkl files/transaction_chanels_dict.pkl', 'wb') as file:
+                pickle.dump(transaction_chanels, file)
+        except FileNotFoundError:
+            print("The transaction_model_dict file was not found. Please ensure the file exists in 'pkl files/'.")
+            return None
+        except pickle.UnpicklingError:
+            print("Error unpickling the transaction_model_dict file. The file may be corrupted.")
+            return None
+        except Exception as e:
+            print(f"An unexpected error occurred while loading the transaction_model_dict file: {e}")
+            return None
+            
         return train_data
+        
+
+
 
     def model_training_process(self):
         data = self.model_training_initialization()
@@ -194,9 +233,10 @@ class model_operations(file_operations):
         y = le_target.fit_transform(y)
         label_dict = {encoded: original for encoded, original in zip(y, data['Transaction_Category'])}
 
+        
         with open('pkl files/label_dict.pkl', 'wb') as file:
             pickle.dump(label_dict, file)
-        
+
         # Train-Test split
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
         # Model
@@ -239,22 +279,40 @@ class model_operations(file_operations):
         df = initial_df[['Transaction_Chanel', 'Decimal Places', 'Is there fraction']]
         
         df = pd.get_dummies(df, columns=['Transaction_Chanel', 'Decimal Places', 'Is there fraction'], drop_first=True)
-        with open('pkl files/random_forest_model.pkl', 'rb') as file:
-            loaded_rf = pickle.load(file)
-        targets = loaded_rf.predict(df)
-       
-        with open('pkl files/label_dict.pkl','rb') as file:
-            label_dict = pickle.load(file)
+        
+        try:
+            with open('pkl files/random_forest_model.pkl', 'rb') as file:
+                loaded_rf = pickle.load(file)
+            targets = loaded_rf.predict(df)
+        except FileNotFoundError:
+            print("The model file was not found. Please ensure the file exists in 'pkl files/'.")
+            return None
+        except pickle.UnpicklingError:
+            print("Error unpickling the model file. The file may be corrupted.")
+            return None
+        except Exception as e:
+            print(f"An unexpected error occurred while loading the model: {e}")
+            return None
+
+        try:
+            with open('pkl files/label_dict.pkl','rb') as file:
+                label_dict = pickle.load(file)
+        except FileNotFoundError:
+            print("The label_dict file was not found. Please ensure the file exists in 'pkl files/'.")
+            return None
+        except pickle.UnpicklingError:
+            print("Error unpickling the label_dict file. The file may be corrupted.")
+            return None
+        except Exception as e:
+            print(f"An unexpected error occurred while loading the label_dict: {e}")
+            return None
+
+
         expense_category = pd.DataFrame({'Transaction_Category': targets})
         initial_df['Transaction_Category'] = expense_category['Transaction_Category'].map(label_dict)
     
         return initial_df
             
-#a = model_operations()
-
-#print(a.model_training_process())
-
-#print(a.model_inference())
 
 
 
