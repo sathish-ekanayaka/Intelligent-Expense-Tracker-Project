@@ -16,6 +16,7 @@ from nltk.tokenize import word_tokenize
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+import matplotlib.pyplot as plt
 
 
 ###################################################################################
@@ -74,7 +75,7 @@ class dataPreprocessing:
 
     # Apply the function to create a new column with datetime objects
         df['Date'] = df['Description'].apply(convert_to_date)
-        df['Date'] = df['Date'].fillna(method='ffill')
+        df['Date'] = df['Date'].fillna(method='bfill')
         df.replace({' ': np.nan, '': np.nan}, inplace=True)
         df.dropna(subset=['Paid out'], how='all', inplace=True)
         df=df[['Date','Description','Paid out']]
@@ -136,6 +137,7 @@ class dataPreprocessing:
         return df
 
 class fileOperations(fileUploads,dataPreprocessing):
+    
     def __init__(self):
         super().__init__()
         self.name ="Data Preprocessing for training and inference"
@@ -177,7 +179,7 @@ class fileOperations(fileUploads,dataPreprocessing):
     
     
     
-############################################################################################################################
+#################################################################################################
 class modelOperations(fileOperations):
     
     def __init__(self):
@@ -185,6 +187,7 @@ class modelOperations(fileOperations):
         self.name = 'Model building, training and inference.'
 
     def model_training_initialization(self):
+        
         csv_path = self.upload_file()
         try:
             train_data = pd.read_csv(csv_path)
@@ -315,6 +318,83 @@ class modelOperations(fileOperations):
             
 
 
+class dataAnalytics:
+    def __init__(self, df_analytics):
+        self.name = "Data Analytics Class"
+        self.df_analytics = df_analytics
+
+    def analytics_preperation(self):
+        try:
+    # Attempt to select the required columns
+            df_analytics = self.df_analytics[['Date', 'Paid out', 'Transaction_Category']]
+        except KeyError as e:
+            # Handle missing columns
+            missing_columns = set(['Date', 'Paid out', 'Transaction_Category']) - set(self.df_analytics.columns)
+            raise KeyError(f"Missing required columns: {', '.join(missing_columns)}") from e
+        except TypeError as e:
+            # Handle invalid object type for self.df_analytics
+            raise TypeError("self.df_analytics is not a valid DataFrame or subscriptable object.") from e
+        except Exception as e:
+            # Handle any unexpected errors
+            raise RuntimeError(f"An unexpected error occurred: {str(e)}") from e        
+        
+        try:
+            # Attempt to sort the DataFrame by the "Date" column
+            df_analytics = df_analytics.sort_values(by="Date", ascending=True)
+        except KeyError as e:
+            # Handle missing "Date" column
+            raise KeyError(f"The column 'Date' is missing in the DataFrame.") from e
+        except TypeError as e:
+            # Handle invalid or unsortable data in the "Date" column
+            raise TypeError("The 'Date' column contains invalid or unsortable data (e.g., mixed types).") from e
+        except AttributeError as e:
+            # Handle invalid DataFrame object
+            raise AttributeError("The object being sorted is not a valid DataFrame.") from e
+        except Exception as e:
+            # Handle any other unexpected errors
+            raise RuntimeError(f"An unexpected error occurred while sorting: {str(e)}") from e
+                
+        
+        df_analytics.reset_index(drop=True, inplace=True)
+        df_analytics["year_month"] = df_analytics["Date"].dt.to_period("M")
+        # Count occurrences for each month
+        month_counts = df_analytics["year_month"].value_counts()
+        # Identify the month with the most data
+        most_frequent_month = month_counts.idxmax()
+        # Filter rows to keep only the data for the most frequent month
+        df_analytics = df_analytics[df_analytics["year_month"] == most_frequent_month]
+        # Drop the helper column (optional)
+        df_analytics.drop(columns=["year_month"], inplace=True)
+        #Adding a column saying which day of the week
+        df_analytics["day_of_week"] = df_analytics["Date"].dt.day_name()
+        return df_analytics
+    
+    def by_category(self):
+        df_category = self.analytics_preperation()
+        # Group by 'Expense_Category' and calculate the sum of 'Paid out'
+        category_sum = df_category.groupby('Transaction_Category')['Paid out'].sum()
+        # Plot pie chart using matplotlib
+        plt.figure(figsize=(8, 8))
+        plt.pie(category_sum, labels=category_sum.index, autopct='%1.1f%%', startangle=90, colors=plt.cm.Paired.colors)
+        plt.title('Expense Category Distribution (Paid Out) - March 2024')
+        plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+        plt.show()
+
+    def by_day(self):
+        df_day = self.analytics_preperation()
+        # Group by 'Expense_Category' and calculate the sum of 'Paid out'
+        daily_sum = df_day.groupby('day_of_week')['Paid out'].sum().reset_index()
+        # Plot the bar plot
+        plt.figure(figsize=(10, 6))
+        plt.bar(daily_sum['day_of_week'], daily_sum['Paid out'], color='skyblue')
+        # Add labels and title
+        plt.title('Sum of Paid Out for each day of week', fontsize=14)
+        plt.xlabel('Day of Week', fontsize=12)
+        plt.ylabel('Total Paid Out', fontsize=12)
+        # Rotate the x-axis labels for better readability
+        plt.xticks(rotation=45, ha='right')
+        plt.show()
+        #print(daily_sum)
 
     
 
