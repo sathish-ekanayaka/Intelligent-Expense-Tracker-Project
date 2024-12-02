@@ -17,6 +17,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 ###################################################################################
@@ -142,10 +143,10 @@ class fileOperations(fileUploads,dataPreprocessing):
         super().__init__()
         self.name ="Data Preprocessing for training and inference"
     
-    def pdf_file(self):
+    def pdf_file(self,pdf_path):
         
         try:
-            pdf_path = self.upload_file()
+            #pdf_path = self.upload_file()
             tables = camelot.read_pdf(pdf_path,flavor='stream',pages="all")
             table1 =tables[0].df
             table2=tables[1].df
@@ -166,7 +167,7 @@ class fileOperations(fileUploads,dataPreprocessing):
         except ValueError as e:
             print(f"Value Error : {e}")
         except Exception as e:
-            print("Unexpected Error occured while parsing the PDF : {e}")
+            print(f"Unexpected Error occured while parsing the PDF : {e}")
             return None
     
 
@@ -255,9 +256,9 @@ class modelOperations(fileOperations):
         return y
                 
     
-    def model_inference(self):
-        initial_df = self.pdf_file()
-        initial_df =self.data_cleaning(initial_df)
+    def model_inference(self,pdf_df):
+        #initial_df = self.pdf_file()
+        initial_df =self.data_cleaning(pdf_df)
         initial_df=self.data_refining(initial_df)
         
         def get_category(description):
@@ -370,31 +371,104 @@ class dataAnalytics:
         return df_analytics
     
     def by_category(self):
+        font = 40
         df_category = self.analytics_preperation()
-        # Group by 'Expense_Category' and calculate the sum of 'Paid out'
+        
+        # Group by 'Transaction_Category' and calculate the sum of 'Paid out'
         category_sum = df_category.groupby('Transaction_Category')['Paid out'].sum()
-        # Plot pie chart using matplotlib
-        plt.figure(figsize=(8, 8))
-        plt.pie(category_sum, labels=category_sum.index, autopct='%1.1f%%', startangle=90, colors=plt.cm.Paired.colors)
-        plt.title('Expense Category Distribution (Paid Out) - March 2024')
-        plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
-        plt.show()
+        
+        # Combine small categories into "Others" (if applicable)
+        threshold = 0.05 * category_sum.sum()  # Categories contributing less than 5% of the total
+        small_categories = category_sum[category_sum < threshold].sum()
+        if small_categories > 0:
+            category_sum = category_sum[category_sum >= threshold]
+            category_sum['Others'] = small_categories
+        
+        # Create a figure
+        fig, ax = plt.subplots(figsize=(20, 20))
+        
+        # Define colors using a modern palette
+        colors = plt.cm.Paired(np.linspace(0, 1, len(category_sum)))
+        
+        # Plot pie chart with improved features
+        wedges, texts, autotexts = ax.pie(
+            category_sum,
+            labels=category_sum.index,
+            autopct='%1.1f%%',
+            startangle=90,
+            colors=colors,
+            textprops={'color': 'black', 'size' :30}
+        )
+        
+        # Enhance text readability
+        for autotext in autotexts:
+            autotext.set_color('white')
+            autotext.set_fontsize(30)
+        
+        # Add a title
+        ax.set_title('Expense Category Distribution (Paid Out)', pad=20, fontsize = 60)
+        
+        # Ensure the pie chart is a circle
+        ax.axis('equal')
+        
+        # Return the figure
+        return fig
 
-    def by_day(self):
+
+    
+
+    # Sample function to plot the data
+    def plot_paid_out_by_day(self):
+        font = 30
         df_day = self.analytics_preperation()
-        # Group by 'Expense_Category' and calculate the sum of 'Paid out'
+        
+        # Group by 'day_of_week' and calculate the sum of 'Paid out'
         daily_sum = df_day.groupby('day_of_week')['Paid out'].sum().reset_index()
-        # Plot the bar plot
-        plt.figure(figsize=(10, 6))
-        plt.bar(daily_sum['day_of_week'], daily_sum['Paid out'], color='skyblue')
+        
+        # Sort by the chronological order of days (optional, if needed)
+        ordered_days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+        daily_sum['day_of_week'] = pd.Categorical(daily_sum['day_of_week'], categories=ordered_days, ordered=True)
+        daily_sum = daily_sum.sort_values('day_of_week')
+        
+        # Create the plot
+        sns.set_theme(style="whitegrid")
+        fig, ax = plt.subplots(figsize=(20,20))
+        barplot = sns.barplot(
+            data=daily_sum, 
+            x='day_of_week', 
+            y='Paid out', 
+            palette='Blues_r', 
+            ax=ax
+        )
+        
+        # Annotate each bar with its value
+        for bar in barplot.patches:
+            height = bar.get_height()
+            ax.annotate(
+                f'{height:.2f}',  # Format the annotation
+                xy=(bar.get_x() + bar.get_width() / 2, height),
+                xytext=(0, 5),  # Offset text slightly above the bar
+                textcoords='offset points',
+                ha='center',
+                va='center',
+                fontsize = font,
+                color='black'
+            )
+        
         # Add labels and title
-        plt.title('Sum of Paid Out for each day of week', fontsize=14)
-        plt.xlabel('Day of Week', fontsize=12)
-        plt.ylabel('Total Paid Out', fontsize=12)
-        # Rotate the x-axis labels for better readability
-        plt.xticks(rotation=45, ha='right')
-        plt.show()
-        #print(daily_sum)
+        ax.set_title('Sum of Paid Out for Each Day of the Week', pad=20, fontsize = 60)
+        ax.set_xlabel('Day of Week', labelpad=10, fontsize = font)
+        ax.set_ylabel('Total Paid Out', labelpad=10, fontsize = font)
+        
+        # Rotate x-axis labels for better readability
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right',fontsize = font)
+        ax.set_yticklabels(ax.get_xticklabels(), ha='right',fontsize = font)
+
+        
+        # Return the figure
+        return fig
+
+
 
     
 
