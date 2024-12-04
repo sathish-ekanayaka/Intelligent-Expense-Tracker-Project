@@ -462,7 +462,7 @@ class dataAnalytics:
         
         # Rotate x-axis labels for better readability
         ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right',fontsize = font)
-        ax.set_yticklabels(ax.get_xticklabels(), ha='right',fontsize = font)
+        ax.set_yticklabels(ax.get_yticklabels(), ha='right',fontsize = font)
 
         
         # Return the figure

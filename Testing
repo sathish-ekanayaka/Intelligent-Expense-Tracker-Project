@@ -1,4 +1,4 @@
-import numpy as np
+'''import numpy as np
 import camelot
 import PyPDF2
 import pandas as pd
@@ -198,6 +198,9 @@ def predictions():
     return data_for_analytics
 
 
-r = predictions()
+r = predictions()'''
+import pandas as pd
 
-print(r) 
+data = pd.read_csv('selected_columns.csv')
+
+print(data)

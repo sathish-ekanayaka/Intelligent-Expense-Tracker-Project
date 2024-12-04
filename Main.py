@@ -40,6 +40,7 @@ if uploaded_file:
     output = modelOps.model_inference(df_to_model)
 
     analytics = dataAnalytics(output)
+    print(output[['Date','Transaction_Category','Paid out']])
 
     fig1 = analytics.by_category()
 
